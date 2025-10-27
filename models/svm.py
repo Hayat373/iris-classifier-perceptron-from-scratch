@@ -1,57 +1,47 @@
 import numpy as np
-from numpy.typing import NDArray
-from typing import Optional
 
 class SVM:
-    """
-    Linear Support Vector Machine implementation using gradient descent on the hinge loss.
-    """
-
-    def __init__(self, learning_rate: float = 0.0001, lambda_param: float = 0.001, n_iters: int = 5000):
+    def __init__(self, learning_rate=0.001, lambda_param=0.01, n_iters=1000):
         self.lr = learning_rate
         self.lambda_param = lambda_param
         self.n_iters = n_iters
-        self.weights: Optional[NDArray[np.float64]] = None
-        self.bias: Optional[float] = None
-        self.loss_history: list = []
+        self.weights = None
+        self.bias = None
 
-    def fit(self, X: NDArray[np.float64], y: NDArray[np.float64]) -> None:
-        """
-        Train the SVM classifier.
-        """
+    def fit(self, X, y):
         n_samples, n_features = X.shape
+        y_ = np.where(y <= 0, -1, 1)  # ensure labels are -1, +1
+
         self.weights = np.zeros(n_features)
-        self.bias = 0.0
-        self.loss_history = []
+        self.bias = 0
 
-        y_ = np.where(y <= 0, -1, 1)
+        for i in range(self.n_iters):
+            # compute margins
+            condition = y_ * (np.dot(X, self.weights) + self.bias) >= 1
 
-        for epoch in range(self.n_iters):
-            total_loss = 0.0
-            for idx, x_i in enumerate(X):
-                assert self.weights is not None and self.bias is not None
-                score = np.dot(x_i, self.weights) + self.bias
-                condition = y_[idx] * score >= 1
-                if condition:
-                    self.weights -= self.lr * (2 * self.lambda_param * self.weights)
-                    total_loss += 0
+            # gradient updates
+            dw = np.zeros(n_features)
+            db = 0
+
+            for idx, cond in enumerate(condition):
+                if cond:
+                    dw += 2 * self.lambda_param * self.weights
+                    db += 0
                 else:
-                    hinge_loss = 1 - y_[idx] * score
-                    self.weights -= self.lr * (2 * self.lambda_param * self.weights - y_[idx] * x_i)
-                    self.bias -= self.lr * y_[idx]
-                    total_loss += hinge_loss
+                    dw += 2 * self.lambda_param * self.weights - np.dot(X[idx], y_[idx])
+                    db += -y_[idx]
 
-            self.loss_history.append(total_loss / n_samples)
-            if epoch % 1000 == 0:
-                print(f"Epoch {epoch}, Loss: {total_loss / n_samples:.4f}")
+            self.weights -= self.lr * dw / n_samples
+            self.bias -= self.lr * db / n_samples
 
-        print(f"Final weights: {self.weights}, Final bias: {self.bias}")
+            # optional: track loss every 500 iters
+            if i % 500 == 0 or i == self.n_iters - 1:
+                hinge_losses = np.maximum(0, 1 - y_ * (np.dot(X, self.weights) + self.bias))
+                loss = self.lambda_param * np.dot(self.weights, self.weights) + np.mean(hinge_losses)
+                print(f"Epoch {i}, Loss: {loss:.4f}")
 
-    def predict(self, X: NDArray[np.float64]) -> NDArray[np.int_]:
-        """
-        Predict binary class labels for samples in X.
-        """
-        assert self.weights is not None and self.bias is not None
-        linear_output = np.dot(X, self.weights) + self.bias
-        y_pred = np.sign(linear_output)
-        return np.where(y_pred >= 0, 1, 0)
+        print("Final weights:", self.weights, "Final bias:", self.bias)
+
+    def predict(self, X):
+        approx = np.dot(X, self.weights) + self.bias
+        return np.sign(approx)

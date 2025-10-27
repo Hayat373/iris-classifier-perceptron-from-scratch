@@ -1,65 +1,93 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from utils.csv_utils import load_csv_data, train_test_split
+from utils.csv_utils import load_csv_data
 from models.perceptron import Perceptron
 from models.svm import SVM
+import os
 
-def accuracy(y_true, y_pred):
-    return np.mean(y_true == y_pred)
+def plot_data_with_boundary(X, y, model, title="Decision Boundary"):
+    """Plot 2D scatter of data points with the model’s decision boundary."""
+    if X.shape[1] < 2:
+        print("❌ Not enough features to plot decision boundary.")
+        return
 
-def plot_data(X, y, title="Data"):
-    plt.figure(figsize=(8,6))
-    plt.scatter(X[:, 0], X[:, 1], c=y, cmap='bwr', s=30)
+    plt.figure(figsize=(8, 6))
+    plt.scatter(X[:, 0], X[:, 1], c=y, cmap='bwr', s=30, edgecolors='k')
+
+    # Decision boundary: w1*x1 + w2*x2 + b = 0  ->  x2 = -(w1*x1 + b)/w2
+    x_min, x_max = X[:, 0].min() - 1, X[:, 0].max() + 1
+    x1 = np.linspace(x_min, x_max, 100)
+    w = model.weights
+    b = model.bias
+    x2 = -(w[0] * x1 + b) / w[1]
+
+    plt.plot(x1, x2, 'k-', linewidth=2, label=f"{model.__class__.__name__} Boundary")
     plt.title(title)
-    plt.xlabel("Feature 1 (Sepal Length)")
-    plt.ylabel("Feature 2 (Sepal Width)")
+    plt.xlabel("Feature 1 (Standardized)")
+    plt.ylabel("Feature 2 (Standardized)")
+    plt.legend()
+    plt.grid(True)
     plt.show()
 
+
 def main():
-    # Load data
-    X, y = load_csv_data()
-    
-    # Filter to binary classes (0: setosa, 1: versicolor)
-    mask = y < 2
-    X = X[mask]
-    y = y[mask]
-    
-    # Standardize features
-    mean = X.mean(axis=0)
-    std = X.std(axis=0)
+    # 1️⃣ Load and preprocess data
+    X, y = load_csv_data(path="data/iris.csv", label_col=-1)
+
+    # Use petal features (columns 2 and 3) — these are linearly separable
+    X = X[:, 2:4]
+
+    # Binary classification: Setosa vs. Versicolor+Virginica
+    y = np.where(y == 0, -1, 1)  # FIXED: use -1, +1 for correct math
+
+    # Standardize
+    mean, std = X.mean(axis=0), X.std(axis=0)
     X = (X - mean) / std
 
-    # Split into train/test
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # Train-test split
+    np.random.seed(42)
+    indices = np.arange(X.shape[0])
+    np.random.shuffle(indices)
+    split = int(0.8 * len(X))
+    X_train, X_test = X[indices[:split]], X[indices[split:]]
+    y_train, y_test = y[indices[:split]], y[indices[split:]]
 
-    # Visualize (first two features)
-    if X_train.shape[1] >= 2:
-        plot_data(X_train[:, :2], y_train, title="Training Data (first two features)")
+    print(f"Training samples: {len(X_train)}, Testing samples: {len(X_test)}")
 
-    # Train Perceptron
-    perceptron = Perceptron(learning_rate=0.01, n_iters=1000)
-    perceptron.fit(X_train, y_train)
-    y_pred_p = perceptron.predict(X_test)
-    print("Perceptron Accuracy:", accuracy(y_test, y_pred_p))
+    # 3️⃣ Train Perceptron
+    print("\n🔹 Training Perceptron...")
+    p = Perceptron(learning_rate=0.01, n_iters=1000)
+    p.fit(X_train, y_train)
+    y_pred_p = p.predict(X_test)
+    acc_p = np.mean(y_pred_p == y_test)
+    print(f"Perceptron Accuracy: {acc_p:.2f}")
 
-    # Train SVM
-    svm_model = SVM(learning_rate=0.0001, lambda_param=0.001, n_iters=5000)
-    svm_model.fit(X_train, y_train)
-    y_pred_svm = svm_model.predict(X_test)
-    print("SVM Accuracy:", accuracy(y_test, y_pred_svm))
+    # 4️⃣ Train SVM
+    print("\n🔹 Training SVM...")
+    print("\n🔹 Training SVM...")
+    s = SVM(learning_rate=0.001, lambda_param=0.01, n_iters=5000)
 
-    # Visualize predictions
-    if X_test.shape[1] >= 2:
-        plot_data(X_test[:, :2], y_pred_p, title="Perceptron Predictions (first two features)")
-        plot_data(X_test[:, :2], y_pred_svm, title="SVM Predictions (first two features)")
+    s.fit(X_train, y_train)
+    y_pred_s = s.predict(X_test)
+    acc_s = np.mean(y_pred_s == y_test)
+    print(f"SVM Accuracy: {acc_s:.2f}")
 
-    # Save scaling params and models
+    # 5️⃣ Plot boundaries
+    plot_data_with_boundary(X_train, y_train, p, "Perceptron Decision Boundary")
+    plot_data_with_boundary(X_train, y_train, s, "SVM Decision Boundary")
+
+    # 6️⃣ Save models and normalization
+    os.makedirs("models", exist_ok=True)
+    os.makedirs("data", exist_ok=True)
     np.save("data/mean.npy", mean)
     np.save("data/std.npy", std)
-    np.save("models/perceptron_weights.npy", perceptron.weights)
-    np.save("models/perceptron_bias.npy", perceptron.bias)
-    np.save("models/svm_weights.npy", svm_model.weights)
-    np.save("models/svm_bias.npy", svm_model.bias)
+    np.save("models/perceptron_weights.npy", p.weights)
+    np.save("models/perceptron_bias.npy", p.bias)
+    np.save("models/svm_weights.npy", s.weights)
+    np.save("models/svm_bias.npy", s.bias)
+
+    print("\n✅ Models and scaling saved successfully!")
+
 
 if __name__ == "__main__":
     main()
